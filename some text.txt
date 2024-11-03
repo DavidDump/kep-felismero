@@ -1,0 +1,5 @@
+zero padding
+resize
+color to grayscale
+histogram equasion: uniformly change the color of an image
+z-score standardization: change the distribution of image pixel values into a normal distribution
