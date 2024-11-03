@@ -70,7 +70,24 @@ class Program {
     
     static void Main(string[] args) {
         string outDir = "output/";
-        new DirectoryInfo(outDir).Delete(true);
+        if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
+        Directory.CreateDirectory(outDir);
+        
+        var setting = new Setting();
+
+        for(int i = 1; i <= 20; ++i) {
+            string dir = "PCB_DATASET/images/Missing_hole/";
+            string number = i < 10 ? "0" + i : "" + i;
+            string fileNameNoExt = "01_missing_hole_" + number;
+            string path = dir + fileNameNoExt + ".jpg";
+
+            DetectMissingHole(path, i, outDir, setting);
+        }
+    }
+
+    static void Main2(string[] args) {
+        string outDir = "output/";
+        if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
         Directory.CreateDirectory(outDir);
 
         int totalImgCount = minArea_COUNT * maxArea_COUNT * threadholdVal_COUNT * threadholdInvVal_COUNT * 20;
@@ -181,67 +198,78 @@ class Program {
         //     }
         // }
 
+        selectComp = selectComp.SmoothGaussian(5);
+        // 255, 50, 5, 1, 0, 50 - found all 3
         var circles = selectComp.HoughCircles(
-            new Gray(500),  // Canny küszöb
-            new Gray(60),  // A kör középpontjának küszöbértéke
-            1.5,            // Akkumulátor felbontása
-            1            // Minimum távolság a körök között
+            new Gray(255),  // Canny küszöb
+            new Gray(50),  // A kör középpontjának küszöbértéke
+            5,            // Akkumulátor felbontása
+            1,            // Minimum távolság a körök között
+            0,
+            25
         );
-        var outputImage = img;
+        
+        var outputImage = selectComp.Convert<Bgr, byte>();
+        var outputImageColor = img.Convert<Bgr, byte>();
         foreach (var circle in circles[0]) {
             outputImage.Draw(circle, new Bgr(0, 0, 255), 3);
+            outputImageColor.Draw(circle, new Bgr(0, 0, 255), 3);
             var center = circle.Center;
             var radius = circle.Radius;
             Rectangle boundingBox = new Rectangle((int)(center.X - radius), (int)(center.Y - radius), (int)(radius * 2), (int)(radius * 2));
             result.Add(boundingBox);
         }
 
-        #if SOBEL
-        var sobel = closeImage.Sobel(1, 1, 3);
-        CvInvoke.Imwrite("_03_sobel_image.png", sobel);
-        #endif
+        // #if SOBEL
+        // var sobel = closeImage.Sobel(1, 1, 3);
+        // CvInvoke.Imwrite("_03_sobel_image.png", sobel);
+        // #endif
 
-        #if ASDF
-        CircleF[] circles = CvInvoke.HoughCircles(
-            gray,                 // Szürkeárnyalatos képet használunk
-            HoughModes.Gradient,  // Hough Circle módszer
-            4,                    // Akkumulátor felbontása
-            50.0,                 // Minimum távolság a körök között
-            500.0,                // Canny küszöb
-            30.0,                 // A kör középpontjának küszöbértéke
-            10,                   // Minimum sugár
-            30                    // Maximum sugár
-        );
+        // #if ASDF
+        // CircleF[] circles = CvInvoke.HoughCircles(
+        //     gray,                 // Szürkeárnyalatos képet használunk
+        //     HoughModes.Gradient,  // Hough Circle módszer
+        //     4,                    // Akkumulátor felbontása
+        //     50.0,                 // Minimum távolság a körök között
+        //     500.0,                // Canny küszöb
+        //     30.0,                 // A kör középpontjának küszöbértéke
+        //     10,                   // Minimum sugár
+        //     30                    // Maximum sugár
+        // );
 
-        foreach (var circle in circles) {
-            Point center = new Point((int)circle.Center.X, (int)circle.Center.Y);
-            int radius = (int)circle.Radius;
-            CvInvoke.Circle(outputImage, center, radius, new MCvScalar(0, 0, 255), 5);
-            continue;
+        // foreach (var circle in circles) {
+        //     Point center = new Point((int)circle.Center.X, (int)circle.Center.Y);
+        //     int radius = (int)circle.Radius;
+        //     CvInvoke.Circle(outputImage, center, radius, new MCvScalar(0, 0, 255), 5);
+        //     continue;
 
-            Rectangle boundingBox = new Rectangle(center.X - radius, center.Y - radius, radius * 2, radius * 2);
-            Mat circleROI = new Mat(closeImage, boundingBox);
-            Image<Gray, byte> circleArea = circleROI.ToImage<Gray, byte>();
+        //     Rectangle boundingBox = new Rectangle(center.X - radius, center.Y - radius, radius * 2, radius * 2);
+        //     Mat circleROI = new Mat(closeImage, boundingBox);
+        //     Image<Gray, byte> circleArea = circleROI.ToImage<Gray, byte>();
 
-            int totalPixelCount = boundingBox.Width * boundingBox.Height;
-            int blackPixelCount = totalPixelCount - CvInvoke.CountNonZero(circleArea);
+        //     int totalPixelCount = boundingBox.Width * boundingBox.Height;
+        //     int blackPixelCount = totalPixelCount - CvInvoke.CountNonZero(circleArea);
 
-            double blackPixelRatio = (double)blackPixelCount / totalPixelCount;
-            if (center.X >= 0 && center.X < closeImage.Width && center.Y >= 0 && center.Y < closeImage.Height) {
-                byte centerIntensity = circleArea.Data[center.Y - boundingBox.Y, center.X - boundingBox.X, 0];
+        //     double blackPixelRatio = (double)blackPixelCount / totalPixelCount;
+        //     if (center.X >= 0 && center.X < closeImage.Width && center.Y >= 0 && center.Y < closeImage.Height) {
+        //         byte centerIntensity = circleArea.Data[center.Y - boundingBox.Y, center.X - boundingBox.X, 0];
 
-                if (centerIntensity == 255 && blackPixelRatio > 0.7) {
-                    CvInvoke.Circle(outputImage, center, radius, new MCvScalar(0, 0, 255), 5);
-                }
-            }
-        }
-        #endif
+        //         if (centerIntensity == 255 && blackPixelRatio > 0.7) {
+        //             CvInvoke.Circle(outputImage, center, radius, new MCvScalar(0, 0, 255), 5);
+        //         }
+        //     }
+        // }
+        // #endif
 
         string outDirs = outDir + count + "/";
         Directory.CreateDirectory(outDirs);
         string outName = setting.minArea + "_" + setting.maxArea + "_" + setting.threadholdVal + "_" + setting.threadholdInvVal + ".jpg";
+        string outNameColor = setting.minArea + "_" + setting.maxArea + "_" + setting.threadholdVal + "_" + setting.threadholdInvVal + "_Color" + ".jpg";
         string outPath = outDirs + outName;
-        // CvInvoke.Imwrite(outPath, outImage);
+        string outPathColor = outDirs + outNameColor;
+        CvInvoke.Imwrite(outPath, outputImage);
+        CvInvoke.Imwrite(outPathColor, outputImageColor);
+        
         return result;
     }
 }
