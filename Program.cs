@@ -14,6 +14,7 @@ class ImageResult {
 }
 
 class Program {
+    // compare pixel by pixel to a master image
     static Mat CompareImages(Mat img1, Mat img2) {
         Mat gray1 = new Mat();
         Mat gray2 = new Mat();
@@ -30,11 +31,8 @@ class Program {
         Mat hierarchy = new Mat();
         CvInvoke.FindContours(thresh, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
 
-        // Draw circles around the contours
         for (int i = 0; i < contours.Size; i++) {
-            // Get the bounding box for each contour
             Rectangle boundingBox = CvInvoke.BoundingRectangle(contours[i]);
-            // Draw a circle around the bounding box center
             Point center = new Point(boundingBox.X + boundingBox.Width / 2, boundingBox.Y + boundingBox.Height / 2);
             int radius = Math.Max(boundingBox.Width, boundingBox.Height) / 2;
             CvInvoke.Circle(img2, center, radius, new MCvScalar(0, 255, 0), 2);
@@ -43,7 +41,7 @@ class Program {
         return img2;
     }
     
-    static public string getInPathNoExt(string dir, int index) {
+    static public string MissingHole_getInPathNoExt(string dir, int index) {
         string number = index < 10 ? "0" + index : "" + index;
         string fileNameNoExt = "01_missing_hole_" + number;
         // string fileName = fileNameNoExt + ".jpg";
@@ -51,7 +49,14 @@ class Program {
         return path;
     }
 
-    static public string getOutPathNoExt(string dir, int index) {
+    static public string MouseBite_getInPathNoExt(string dir, int index) {
+        string number = index < 10 ? "0" + index : "" + index;
+        string fileNameNoExt = "01_mouse_bite_" + number;
+        string path = dir + fileNameNoExt;
+        return path;
+    }
+
+    static public string MissingHole_getOutPathNoExt(string dir, int index) {
         string outDirs = dir + index + "/";
         Directory.CreateDirectory(outDirs);
         
@@ -62,35 +67,50 @@ class Program {
         return outPath;
     }
 
+    static public string MouseBite_getOutPathNoExt(string dir, int index) {
+        string outDirs = dir + index + "/";
+        Directory.CreateDirectory(outDirs);
+        
+        string number = index < 10 ? "0" + index : "" + index;
+        string fileNameNoExt = "01_mouse_bite_" + number;
+        string outPath = outDirs + fileNameNoExt;
+        return outPath;
+    }
+
     static void Main(string[] args) {
         string outDir = "output/";
-        string inDir = "PCB_DATASET/images/Missing_hole/";
+        string missingHoleDir = "PCB_DATASET/images/Missing_hole/";
+        string mouseBiteDir = "PCB_DATASET/images/Mouse_bite/";
         if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
         Directory.CreateDirectory(outDir);
         
+        bool missingHole = false;
+        bool mouseBite = true;
         for(int i = 1; i <= 20; ++i) {
-            string inPath = getInPathNoExt(inDir, i) + ".jpg";
+            if(missingHole) {
+                string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
+                var img = new Image<Bgr, Byte>(inPath);
+                
+                var res = DetectMissingHole(img);
+                
+                string outPathNoExt = MissingHole_getOutPathNoExt(outDir, i);
+                string outPath = outPathNoExt + ".jpg";
+                string outPathColor = outPathNoExt + "_Color" + ".jpg";
 
-            var img = new Image<Bgr, Byte>(inPath);
-            var res = DetectMissingHole(img);
+                CvInvoke.Imwrite(outPath, res.blackAndWhite);
+                CvInvoke.Imwrite(outPathColor, res.color);
+            }
 
-            string outPathNoExt = getOutPathNoExt(outDir, i);
-            string outPath = outPathNoExt + ".jpg";
-            string outPathColor = outPathNoExt + "_Color" + ".jpg";
-            
-            CvInvoke.Imwrite(outPath, res.blackAndWhite);
-            CvInvoke.Imwrite(outPathColor, res.color);
+            if(mouseBite) {
+                string inPath = MouseBite_getInPathNoExt(mouseBiteDir, i) + ".jpg";
+                var img = new Image<Bgr, Byte>(inPath);
+
+                var res = DetectMouseBite(img);
+
+                string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
+                CvInvoke.Imwrite(outPath, res);
+            }
         }
-
-        // string inPath = getInPathNoExt(inDir, 1) + ".jpg";
-        // string outPathNoExt = getInPathNoExt(outDir, 1);
-        // string outPath = outPathNoExt + ".jpg";
-        // string outPathColor = outPathNoExt + "_Color" + ".jpg";
-
-        // var img = new Image<Bgr, Byte>(inPath);
-        // var res = DetectMissingHole(img);
-        // CvInvoke.Imwrite(outPath, res.blackAndWhite);
-        // CvInvoke.Imwrite(outPathColor, res.color);
     }
 
     static ImageResult DetectMissingHole(Image<Bgr, Byte> img, Int32 minArea = 300, Int32 maxArea = 900, Int32 threadholdVal = 40, Int32 threadholdInvVal = 128) {
@@ -130,19 +150,7 @@ class Program {
             }
         }
 
-        // Mat kernelCircle2 = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(14, 14), new Point(-1, -1));
-        // CvInvoke.MorphologyEx(selectComp, selectComp, MorphOp.Open, kernelCircle2, new Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));
-        // CvInvoke.Imwrite("_06_open_image.png", selectComp);
-
-        // Image<Bgr, byte> outputImage = img.Clone();
-        // for (int row = 0; row < LabelImage.Rows; row++) {
-        //     for (int col = 0; col < LabelImage.Cols; col++) {
-        //         if (selectComp.Data[row, col, 0] > 128) outputImage.Data[row, col, 2] = 255;
-        //     }
-        // }
-
         selectComp = selectComp.SmoothGaussian(5);
-        // 255, 50, 5, 1, 0, 50 - found all 3
         var circles = selectComp.HoughCircles(
             new Gray(255),  // Canny küszöb
             new Gray(50),  // A kör középpontjának küszöbértéke
@@ -181,12 +189,8 @@ class Program {
             var whiteRatio = whitePixelCount/totalPixelCount;
             if(whiteRatio > 0.4) {
                 filteredCircles.Add(circle);
-                // Console.WriteLine($"added circle {index} with ratio: {whiteRatio}");
             }
 
-            // Console.WriteLine($"total pixel count: {totalPixelCount}");
-            // Console.WriteLine($"white pixel count: {whitePixelCount}");
-            // Console.WriteLine($"percent of circle {index} is {whiteRatio}");
             index++;
         }
 
@@ -214,6 +218,33 @@ class Program {
         var dist = Math.Sqrt(Math.Abs(Math.Pow(p.X - (int)center.X, 2)) + Math.Abs(Math.Pow(p.Y - (int)center.Y, 2)));
         if (dist > c.Radius) return false;
         return true;
+    }
+
+    static public Image<Bgr, Byte> DetectMouseBite(Image<Bgr, Byte> img) {
+        var threadholdVal = 40;
+        var threadholdInvVal = 128;
+        var result = img.Clone();
+        var gray = img.Convert<Gray, Byte>().SmoothGaussian(7);
+        
+        // NOTE: other overload: https://www.emgu.com/wiki/files/4.9.0/document/html/M_Emgu_CV_Image_2_Canny_1.htm
+        // var edges = gray.Canny(30, 150);
+        // edges = edges.SmoothGaussian(3);
+
+        LineSegment2D[][] lines = gray.HoughLines(
+            30,            // double cannyThreshold,
+            150,           // double cannyThresholdLinking,
+            1,             // double rhoResolution,
+            Math.PI / 180, // double thetaResolution,
+            100,           // int threshold,
+            0,             // double minLineWidth,
+            0              // double gapBetweenLines
+        );
+
+        foreach(var line in lines[0]) {
+            result.Draw(line, new Bgr(0, 0, 255), 3);
+        }
+
+        return result;
     }
 }
 
