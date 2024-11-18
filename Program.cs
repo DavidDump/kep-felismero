@@ -86,31 +86,37 @@ class Program {
         
         bool missingHole = false;
         bool mouseBite = true;
-        for(int i = 1; i <= 20; ++i) {
-            if(missingHole) {
-                string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
-                var img = new Image<Bgr, Byte>(inPath);
+        // for(int i = 1; i <= 20; ++i) {
+        //     if(missingHole) {
+        //         string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
+        //         var img = new Image<Bgr, Byte>(inPath);
                 
-                var res = DetectMissingHole(img);
+        //         var res = DetectMissingHole(img);
                 
-                string outPathNoExt = MissingHole_getOutPathNoExt(outDir, i);
-                string outPath = outPathNoExt + ".jpg";
-                string outPathColor = outPathNoExt + "_Color" + ".jpg";
+        //         string outPathNoExt = MissingHole_getOutPathNoExt(outDir, i);
+        //         string outPath = outPathNoExt + ".jpg";
+        //         string outPathColor = outPathNoExt + "_Color" + ".jpg";
 
-                CvInvoke.Imwrite(outPath, res.blackAndWhite);
-                CvInvoke.Imwrite(outPathColor, res.color);
-            }
+        //         CvInvoke.Imwrite(outPath, res.blackAndWhite);
+        //         CvInvoke.Imwrite(outPathColor, res.color);
+        //     }
 
-            if(mouseBite) {
-                string inPath = MouseBite_getInPathNoExt(mouseBiteDir, i) + ".jpg";
-                var img = new Image<Bgr, Byte>(inPath);
+        //     if(mouseBite) {
+        //         string inPath = MouseBite_getInPathNoExt(mouseBiteDir, i) + ".jpg";
+        //         var img = new Image<Bgr, Byte>(inPath);
 
-                var res = DetectMouseBite(img);
+        //         var res = DetectMouseBite(img);
 
-                string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
-                CvInvoke.Imwrite(outPath, res);
-            }
-        }
+        //         string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
+        //         CvInvoke.Imwrite(outPath, res);
+        //     }
+        // }
+
+        string inPath = MouseBite_getInPathNoExt(mouseBiteDir, 1) + ".jpg";
+        var img = new Image<Bgr, Byte>(inPath);
+        var res = DetectMouseBite(img);
+        string outPath = MouseBite_getOutPathNoExt(outDir, 1) + ".jpg";
+        CvInvoke.Imwrite(outPath, res);
     }
 
     static ImageResult DetectMissingHole(Image<Bgr, Byte> img, Int32 minArea = 300, Int32 maxArea = 900, Int32 threadholdVal = 40, Int32 threadholdInvVal = 128) {
@@ -153,9 +159,9 @@ class Program {
         selectComp = selectComp.SmoothGaussian(5);
         var circles = selectComp.HoughCircles(
             new Gray(255),  // Canny küszöb
-            new Gray(50),  // A kör középpontjának küszöbértéke
-            5,            // Akkumulátor felbontása
-            1,            // Minimum távolság a körök között
+            new Gray(50),   // A kör középpontjának küszöbértéke
+            5,              // Akkumulátor felbontása
+            1,              // Minimum távolság a körök között
             0,
             20
         );
@@ -221,30 +227,98 @@ class Program {
     }
 
     static public Image<Bgr, Byte> DetectMouseBite(Image<Bgr, Byte> img) {
-        var threadholdVal = 40;
-        var threadholdInvVal = 128;
-        var result = img.Clone();
-        var gray = img.Convert<Gray, Byte>().SmoothGaussian(7);
-        
-        // NOTE: other overload: https://www.emgu.com/wiki/files/4.9.0/document/html/M_Emgu_CV_Image_2_Canny_1.htm
-        // var edges = gray.Canny(30, 150);
-        // edges = edges.SmoothGaussian(3);
+        img = img.SmoothGaussian(5);
+        var backgroundBot = new Bgr(0, 80, 0);  // RGB: 0 90 10
+        var backgroundTop = new Bgr(40, 100, 45); // RGB: 5(25) 100 20
 
-        LineSegment2D[][] lines = gray.HoughLines(
-            30,            // double cannyThreshold,
-            150,           // double cannyThresholdLinking,
+        var imgMask = img.InRange(backgroundBot, backgroundTop);
+
+        var labels = new Mat();
+        var stats = new Mat();
+        var centroids = new Mat();
+        var labelsCount = CvInvoke.ConnectedComponentsWithStats(
+            imgMask,  // IInputArray image,
+            labels,   // IOutputArray labels,
+            stats,    // IOutputArray stats,
+            centroids // IOutputArray centroids,
+            // LineType connectivity = LineType.EightConnected,
+            // DepthType labelType = DepthType.Cv32S,
+            // ConnectedComponentsAlgorithmsTypes cclType = ConnectedComponentsAlgorithmsTypes.Default
+        );
+
+        var iStats = stats.ToImage<Gray, Int32>();
+        var iLabels = labels.ToImage<Gray, Int32>();
+        for (int row = 0; row < imgMask.Rows; row++) {
+            for (int col = 0; col < imgMask.Cols; col++) {
+                Int32 componentIdx = iLabels.Data[row, col, 0];
+                if (componentIdx == 0) continue;
+                Int32 componentArea = iStats.Data[componentIdx, 4, 0];
+
+                if(componentArea > 40000) {
+                    // black
+                    imgMask.Data[row, col, 0] = 0;
+                } else {
+                    // white
+                    imgMask.Data[row, col, 0] = 255;
+                }
+            }
+        }
+
+        // imgMask = imgMask.SmoothGaussian(1);
+        var kernel1 = CvInvoke.GetStructuringElement(ElementShape.Rectangle, new Size(3, 3), new Point(-1, -1));
+        var kernel2 = CvInvoke.GetStructuringElement(ElementShape.Rectangle, new Size(5, 5), new Point(-1, -1));
+        var kernel3 = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(5, 5), new Point(-1, -1));
+        var closeImage = imgMask.Clone();
+        for(int i = 0; i < 1; ++i) {
+            closeImage = closeImage.MorphologyEx(MorphOp.Dilate, kernel1, new Point(-1, -1), 1, BorderType.Default, default);
+            closeImage = closeImage.MorphologyEx(MorphOp.Open, kernel3, new Point(-1, -1), 1, BorderType.Default, default);
+            closeImage = closeImage.MorphologyEx(MorphOp.Close, kernel2, new Point(-1, -1), 1, BorderType.Default, default);
+        }
+        // var newImg = closeImage.Clone();
+        // CvInvoke.BilateralFilter(closeImage, newImg, 10, 200, 200);
+        CvInvoke.Imwrite("closeImage.jpg", closeImage);
+
+        // NOTE: sobel(0, 1, 3) highlights edges along the y axis
+        //       sobel(1, 0, 3) highlights edges along the x axis
+        //       the third parameter is "intensity"
+        var sobel = closeImage.Sobel(0, 2, 9);
+        CvInvoke.Imwrite("sobel.jpg", sobel);
+
+        // Mat edges = new Mat();
+        // CvInvoke.Canny(grayImage, edges, 100, 200);
+
+        // VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
+        // Mat hierarchy = new Mat();
+        // CvInvoke.FindContours(edges, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
+        // foreach(var contour) {
+
+        // }
+
+        // imgMask = imgMask.SmoothGaussian(5);
+        LineSegment2D[][] lines = imgMask.HoughLines(
+            255,           // double cannyThreshold,
+            255,           // double cannyThresholdLinking,
             1,             // double rhoResolution,
             Math.PI / 180, // double thetaResolution,
             100,           // int threshold,
-            0,             // double minLineWidth,
+            50,             // double minLineWidth,
             0              // double gapBetweenLines
         );
 
-        foreach(var line in lines[0]) {
-            result.Draw(line, new Bgr(0, 0, 255), 3);
-        }
+        var result = closeImage.Clone();
+        CvInvoke.FastNlMeansDenoising(
+            closeImage, // IInputArray src,
+            result,     // IOutputArray dst,
+            10,         // float h = 3f,
+            50,         // int templateWindowSize = 7,
+            70          // int searchWindowSize = 21
+        );
+        // foreach(var line in lines[0]) {
+        //     result.Draw(line, new Bgr(0, 0, 255), 3);
+        // }
+        CvInvoke.Imwrite("lines.jpg", result);
 
-        return result;
+        return result.Convert<Bgr, Byte>();
     }
 }
 
