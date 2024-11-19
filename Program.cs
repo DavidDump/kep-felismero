@@ -227,69 +227,20 @@ class Program {
     }
 
     static public Image<Bgr, Byte> DetectMouseBite(Image<Bgr, Byte> img) {
-        img = img.SmoothGaussian(5);
-        var backgroundBot = new Bgr(0, 80, 0);  // RGB: 0 90 10
-        var backgroundTop = new Bgr(40, 100, 45); // RGB: 5(25) 100 20
+        var process = 
+            new ProcessedImage(img)
+            .SmoothImage(5)
+            .InRange(new Bgr(0, 80, 0), new Bgr(40, 100, 45))
+            .GetComponents()
+            .FilterComponentsBySize(125, 37500)
+            .Morphology(MorphOp.Dilate, ElementShape.Rectangle, new Size(3, 3))
+            .Morphology(MorphOp.Open, ElementShape.Rectangle, new Size(5, 5))
+            .Morphology(MorphOp.Close, ElementShape.Ellipse, new Size(5, 5))
+            .SaveImageGray("closeImage.jpg")
+            .GenerateDistanceMask(DistType.L1, 10)
+            ;
 
-        var imgMask = img.InRange(backgroundBot, backgroundTop);
-
-        var labels = new Mat();
-        var stats = new Mat();
-        var centroids = new Mat();
-        var labelsCount = CvInvoke.ConnectedComponentsWithStats(
-            imgMask,  // IInputArray image,
-            labels,   // IOutputArray labels,
-            stats,    // IOutputArray stats,
-            centroids // IOutputArray centroids,
-            // LineType connectivity = LineType.EightConnected,
-            // DepthType labelType = DepthType.Cv32S,
-            // ConnectedComponentsAlgorithmsTypes cclType = ConnectedComponentsAlgorithmsTypes.Default
-        );
-
-        var iStats = stats.ToImage<Gray, Int32>();
-        var iLabels = labels.ToImage<Gray, Int32>();
-        for (int row = 0; row < imgMask.Rows; row++) {
-            for (int col = 0; col < imgMask.Cols; col++) {
-                Int32 componentIdx = iLabels.Data[row, col, 0];
-                if (componentIdx == 0) continue;
-                Int32 componentArea = iStats.Data[componentIdx, 4, 0];
-
-                if(componentArea > 40000) {
-                    // black
-                    imgMask.Data[row, col, 0] = 0;
-                } else {
-                    // white
-                    imgMask.Data[row, col, 0] = 255;
-                }
-            }
-        }
-        // var result = imgMask.Clone();
-
-        // imgMask = imgMask.SmoothGaussian(1);
-        var kernel1 = CvInvoke.GetStructuringElement(ElementShape.Rectangle, new Size(3, 3), new Point(-1, -1));
-        var kernel2 = CvInvoke.GetStructuringElement(ElementShape.Rectangle, new Size(5, 5), new Point(-1, -1));
-        var kernel3 = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(5, 5), new Point(-1, -1));
-        var closeImage = imgMask.Clone();
-        for(int i = 0; i < 1; ++i) {
-            closeImage = closeImage.MorphologyEx(MorphOp.Dilate, kernel1, new Point(-1, -1), 1, BorderType.Default, default);
-            closeImage = closeImage.MorphologyEx(MorphOp.Open, kernel3, new Point(-1, -1), 1, BorderType.Default, default);
-            closeImage = closeImage.MorphologyEx(MorphOp.Close, kernel2, new Point(-1, -1), 1, BorderType.Default, default);
-        }
-        // var newImg = closeImage.Clone();
-        // CvInvoke.BilateralFilter(closeImage, newImg, 10, 200, 200);
-        CvInvoke.Imwrite("closeImage.jpg", closeImage);
-
-        var distanceMask = new Mat();
-        var distanceLabels = new Mat();
-        CvInvoke.DistanceTransform(
-            closeImage,     // IInputArray src,
-            distanceMask,   // IOutputArray dst,
-            distanceLabels, // IOutputArray labels,
-            DistType.L1,    // DistType distanceType,
-            10               // int maskSize,
-            // DistLabelType labelType = DistLabelType.CComp
-        );
-        CvInvoke.Imwrite("distMask.jpg", distanceMask);
+        CvInvoke.Imwrite("distMask.jpg", process.distanceMask);
         
         // var iMask = distanceMask.ToImage<Gray, Byte>();
 
@@ -329,30 +280,39 @@ class Program {
         // }
         // CvInvoke.Imwrite("lines.jpg", result);
 
-        var result = img.Clone();
-        return result.Convert<Bgr, Byte>();
+        return process.imageGray.Convert<Bgr, Byte>();
     }
 }
 
 class ProcessedImage {
     // the current working images
     Image<Bgr, Byte> originalImage;
-    Image<Gray, Byte> imageGray;
+    public Image<Gray, Byte> imageGray;
     
     // variables used when finding components
-    Mat componentsLabels;
-    Mat componentsStats;
-    Mat componentsCentroids;
+    Mat componentsLabels = new();
+    Mat componentsStats = new();
+    Mat componentsCentroids = new();
     int labelsCount;
+
+    // variables used for distance field
+    public Mat distanceMask = new();
+    Mat distanceLabels = new();
 
     public ProcessedImage(string filepath) {
         this.originalImage = new Image<Bgr, Byte>(filepath);
-        this.componentsLabels = new();
-        this.componentsStats = new();
-        this.componentsCentroids = new();
     }
 
-    public ProcessedImage SmoothGaussian(int kernelSize) {
+    public ProcessedImage(Image<Bgr, Byte> img) {
+        this.originalImage = img;
+    }
+
+    public ProcessedImage SmoothImage(int kernelSize) {
+        this.originalImage = this.originalImage.SmoothGaussian(kernelSize);
+        return this;
+    }
+
+    public ProcessedImage SmoothGray(int kernelSize) {
         this.imageGray = this.imageGray.SmoothGaussian(kernelSize);
         return this;
     }
@@ -376,7 +336,7 @@ class ProcessedImage {
         return this;
     }
 
-    public ProcessedImage FileterComponentsBySize(int minArea, int maxArea) {
+    public ProcessedImage FilterComponentsBySize(int minArea, int maxArea) {
         var iStats = this.componentsStats.ToImage<Gray, Int32>();
         var iLabels = this.componentsLabels.ToImage<Gray, Int32>();
         for (int row = 0; row < this.imageGray.Rows; row++) {
@@ -405,6 +365,18 @@ class ProcessedImage {
 
     public ProcessedImage SaveImageGray(string filepath) {
         CvInvoke.Imwrite(filepath, this.imageGray);
+        return this;
+    }
+
+    public ProcessedImage GenerateDistanceMask(DistType type, int maskSize) {
+        CvInvoke.DistanceTransform(
+            this.imageGray,      // IInputArray src,
+            this.distanceMask,   // IOutputArray dst,
+            this.distanceLabels, // IOutputArray labels,
+            type,                // DistType distanceType,
+            maskSize             // int maskSize,
+            // DistLabelType labelType = DistLabelType.CComp
+        );
         return this;
     }
 }
