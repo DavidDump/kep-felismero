@@ -228,15 +228,15 @@ class Program {
 
     static public Image<Bgr, Byte> DetectMouseBite(Image<Bgr, Byte> img) {
         var process = 
-            new ProcessedImage(img)
-            .SmoothImage(5)
+            new ProcessedImage<Bgr>(img)
+            .SmoothGaussian(5)
             .InRange(new Bgr(0, 80, 0), new Bgr(40, 100, 45))
             .GetComponents()
             .FilterComponentsBySize(125, 37500)
             .Morphology(MorphOp.Dilate, ElementShape.Rectangle, new Size(3, 3))
             .Morphology(MorphOp.Open, ElementShape.Rectangle, new Size(5, 5))
             .Morphology(MorphOp.Close, ElementShape.Ellipse, new Size(5, 5))
-            .SaveImageGray("closeImage.jpg")
+            .SaveImage("closeImage.jpg")
             .GenerateDistanceMask(DistType.L1, 10)
             ;
 
@@ -280,14 +280,14 @@ class Program {
         // }
         // CvInvoke.Imwrite("lines.jpg", result);
 
-        return process.imageGray.Convert<Bgr, Byte>();
+        return process.ImageToColor();
     }
 }
 
-class ProcessedImage {
-    // the current working images
-    Image<Bgr, Byte> originalImage;
-    public Image<Gray, Byte> imageGray;
+class ProcessedImage<TColor>
+where TColor : struct, IColor
+{
+    Image<TColor, Byte> image;
     
     // variables used when finding components
     Mat componentsLabels = new();
@@ -300,32 +300,60 @@ class ProcessedImage {
     Mat distanceLabels = new();
 
     public ProcessedImage(string filepath) {
-        this.originalImage = new Image<Bgr, Byte>(filepath);
+        this.image = new Image<TColor, Byte>(filepath);
     }
 
-    public ProcessedImage(Image<Bgr, Byte> img) {
-        this.originalImage = img;
+    public ProcessedImage(Image<TColor, Byte> img) {
+        this.image = img;
     }
 
-    public ProcessedImage SmoothImage(int kernelSize) {
-        this.originalImage = this.originalImage.SmoothGaussian(kernelSize);
+    ProcessedImage(
+        Image<TColor, Byte> image,
+        Mat componentsLabels,
+        Mat componentsStats,
+        Mat componentsCentroids,
+        int labelsCount,
+        Mat distanceMask,
+        Mat distanceLabels
+    ) {
+        this.image = image;
+        this.componentsLabels = componentsLabels;
+        this.componentsStats = componentsStats;
+        this.componentsCentroids = componentsCentroids;
+        this.labelsCount = labelsCount;
+        this.distanceMask = distanceMask;
+        this.distanceLabels = distanceLabels;
+    }
+
+    public Image<Bgr, Byte> ImageToColor() {
+        return this.image.Convert<Bgr, Byte>();
+    }
+
+    public Image<Gray, Byte> ImageToGray() {
+        return this.image.Convert<Gray, Byte>();
+    }
+
+    public ProcessedImage<TColor> SmoothGaussian(int kernelSize) {
+        this.image = this.image.SmoothGaussian(kernelSize);
         return this;
     }
 
-    public ProcessedImage SmoothGray(int kernelSize) {
-        this.imageGray = this.imageGray.SmoothGaussian(kernelSize);
-        return this;
+    public ProcessedImage<Gray> InRange(TColor bot, TColor top) {
+        var gray = this.image.InRange(bot, top);
+        return new ProcessedImage<Gray>(
+            gray,
+            this.componentsLabels,
+            this.componentsStats,
+            this.componentsCentroids,
+            this.labelsCount,
+            this.distanceMask,
+            this.distanceLabels
+        );
     }
 
-    // TODO: fix types
-    public ProcessedImage InRange(Bgr bot, Bgr top) {
-        this.imageGray = this.originalImage.InRange(bot, top);
-        return this;
-    }
-
-    public ProcessedImage GetComponents() {
+    public ProcessedImage<TColor> GetComponents() {
         this.labelsCount = CvInvoke.ConnectedComponentsWithStats(
-            this.imageGray,          // IInputArray image,
+            this.image,              // IInputArray image,
             this.componentsLabels,   // IOutputArray labels,
             this.componentsStats,    // IOutputArray stats,
             this.componentsCentroids // IOutputArray centroids,
@@ -336,41 +364,41 @@ class ProcessedImage {
         return this;
     }
 
-    public ProcessedImage FilterComponentsBySize(int minArea, int maxArea) {
+    public ProcessedImage<TColor> FilterComponentsBySize(int minArea, int maxArea) {
         var iStats = this.componentsStats.ToImage<Gray, Int32>();
         var iLabels = this.componentsLabels.ToImage<Gray, Int32>();
-        for (int row = 0; row < this.imageGray.Rows; row++) {
-            for (int col = 0; col < this.imageGray.Cols; col++) {
+        for (int row = 0; row < this.image.Rows; row++) {
+            for (int col = 0; col < this.image.Cols; col++) {
                 Int32 componentIdx = iLabels.Data[row, col, 0];
                 if (componentIdx == 0) continue;
                 Int32 componentArea = iStats.Data[componentIdx, 4, 0];
 
                 if(minArea < componentArea && componentArea < maxArea) {
                     // white
-                    this.imageGray.Data[row, col, 0] = 255;
+                    this.image.Data[row, col, 0] = (Byte)255;
                 } else {
                     // black
-                    this.imageGray.Data[row, col, 0] = 0;
+                    this.image.Data[row, col, 0] = 0;
                 }
             }
         }
         return this;
     }
 
-    public ProcessedImage Morphology(MorphOp operation, ElementShape shape, Size kernelSize) {
+    public ProcessedImage<TColor> Morphology(MorphOp operation, ElementShape shape, Size kernelSize) {
         var kernel = CvInvoke.GetStructuringElement(shape, kernelSize, new Point(-1, -1));
-        this.imageGray = this.imageGray.MorphologyEx(operation, kernel, new Point(-1, -1), 1, BorderType.Default, default);
+        this.image = this.image.MorphologyEx(operation, kernel, new Point(-1, -1), 1, BorderType.Default, default);
         return this;
     }
 
-    public ProcessedImage SaveImageGray(string filepath) {
-        CvInvoke.Imwrite(filepath, this.imageGray);
+    public ProcessedImage<TColor> SaveImage(string filepath) {
+        CvInvoke.Imwrite(filepath, this.image);
         return this;
     }
 
-    public ProcessedImage GenerateDistanceMask(DistType type, int maskSize) {
+    public ProcessedImage<TColor> GenerateDistanceMask(DistType type, int maskSize) {
         CvInvoke.DistanceTransform(
-            this.imageGray,      // IInputArray src,
+            this.image,          // IInputArray src,
             this.distanceMask,   // IOutputArray dst,
             this.distanceLabels, // IOutputArray labels,
             type,                // DistType distanceType,
