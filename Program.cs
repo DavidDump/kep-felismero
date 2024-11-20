@@ -7,12 +7,6 @@ using Emgu.CV.Features2D;
 using Emgu.CV.Structure;
 using Emgu.CV.Util;
 
-class ImageResult {
-    public Image<Bgr, Byte> color;
-    public Image<Bgr, Byte> blackAndWhite;
-    public Image<Gray, int> stats;
-}
-
 class Program {
     // compare pixel by pixel to a master image
     static Mat CompareImages(Mat img1, Mat img2) {
@@ -86,128 +80,45 @@ class Program {
         
         bool missingHole = false;
         bool mouseBite = true;
-        // for(int i = 1; i <= 20; ++i) {
-        //     if(missingHole) {
-        //         string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
-        //         var img = new Image<Bgr, Byte>(inPath);
-                
-        //         var res = DetectMissingHole(img);
-                
-        //         string outPathNoExt = MissingHole_getOutPathNoExt(outDir, i);
-        //         string outPath = outPathNoExt + ".jpg";
-        //         string outPathColor = outPathNoExt + "_Color" + ".jpg";
+        for(int i = 1; i <= 1; ++i) {
+            if(missingHole) {
+                string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
+                var img = new Image<Bgr, Byte>(inPath);
 
-        //         CvInvoke.Imwrite(outPath, res.blackAndWhite);
-        //         CvInvoke.Imwrite(outPathColor, res.color);
-        //     }
+                var res = DetectMissingHole(img);
 
-        //     if(mouseBite) {
-        //         string inPath = MouseBite_getInPathNoExt(mouseBiteDir, i) + ".jpg";
-        //         var img = new Image<Bgr, Byte>(inPath);
+                string outPath = MissingHole_getOutPathNoExt(outDir, i) + ".jpg";
+                CvInvoke.Imwrite(outPath, res);
+            }
 
-        //         var res = DetectMouseBite(img);
+            if(mouseBite) {
+                string inPath = MouseBite_getInPathNoExt(mouseBiteDir, i) + ".jpg";
+                var img = new Image<Bgr, Byte>(inPath);
 
-        //         string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
-        //         CvInvoke.Imwrite(outPath, res);
-        //     }
-        // }
+                var res = DetectMouseBite(img);
 
-        string inPath = MouseBite_getInPathNoExt(mouseBiteDir, 1) + ".jpg";
-        var img = new Image<Bgr, Byte>(inPath);
-        var res = DetectMouseBite(img);
-        string outPath = MouseBite_getOutPathNoExt(outDir, 1) + ".jpg";
-        CvInvoke.Imwrite(outPath, res);
+                string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
+                CvInvoke.Imwrite(outPath, res);
+            }
+        }
     }
 
-    static ImageResult DetectMissingHole(Image<Bgr, Byte> img, Int32 minArea = 300, Int32 maxArea = 900, Int32 threadholdVal = 40, Int32 threadholdInvVal = 128) {
-        minArea = 200;
-        maxArea = 600;
-        var result = new ImageResult();
-        result.color = img.Clone();
-        result.blackAndWhite = img.Clone();
-
-        var gray = img.Convert<Gray, byte>().SmoothGaussian(5);
-        var thr = gray.ThresholdBinary(new Gray(threadholdVal), new Gray(255));
-        var kernelCircle = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(8, 8), new Point(-1, -1)); // NOTE: maybe kernel size can be tuned
-        var closeImage = thr.MorphologyEx(MorphOp.Close, kernelCircle, new Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));
-        var invImage = closeImage.ThresholdBinaryInv(new Gray(threadholdInvVal), new Gray(255));
-
-        var LabelImage = new Mat();
-        var stats = new Mat();
-        var centroids = new Mat();
-        CvInvoke.ConnectedComponentsWithStats(invImage, LabelImage, stats, centroids);
-
-        Image<Gray, Int32> iStats = stats.ToImage<Gray, Int32>();
-        Image<Gray, Byte> selectComp = new(LabelImage.Size);
-        Image<Gray, Int32> LabelImageIM = LabelImage.ToImage<Gray, Int32>();
-        result.stats = LabelImageIM.Clone();
-
-        for (int row = 0; row < LabelImage.Rows; row++) {
-            for (int col = 0; col < LabelImage.Cols; col++) {
-                Int32 componentIdx = LabelImageIM.Data[row, col, 0];
-                if (componentIdx == 0) continue;
-                Int32 componentArea = iStats.Data[componentIdx, 4, 0];
-
-                if (minArea < componentArea && componentArea < maxArea) {
-                    selectComp.Data[row, col, 0] = 255;
-                } else {
-                    selectComp.Data[row, col, 0] = 0;
-                }
-            }
-        }
-
-        selectComp = selectComp.SmoothGaussian(5);
-        var circles = selectComp.HoughCircles(
-            new Gray(255),  // Canny küszöb
-            new Gray(50),   // A kör középpontjának küszöbértéke
-            5,              // Akkumulátor felbontása
-            1,              // Minimum távolság a körök között
-            0,
-            20
-        );
-        
-        // NOTE: iterate over all the circles, iterate the pixels inside the circle,
-        //       get the percent of the circle filled with white pixels, if below  a threashold discard the circle
-        int index = 0;
-        var filteredCircles = new List<CircleF>();
-        foreach(var circle in circles[0]) {
-            Rectangle rect = toRect(circle);
-            // int totalPixelCount = rect.Width * rect.Height;
-            var totalPixelCount = Math.PI * Math.Pow(circle.Radius, 2);
-            double whitePixelCount = 0;
-            for(int y = rect.Y; y < rect.Y + rect.Height; ++y) {
-                for(int x = rect.X; x < rect.X + rect.Width; ++x) {
-                    var p = new Point(x, y);
-                    if(!isPointInCircle(p, circle)) continue;
-                    
-                    var pixelColor = selectComp.Data[y, x, 0];
-                    if(pixelColor == 255) {
-                        // white
-                        whitePixelCount++;
-                    } else if(pixelColor == 0) {
-                        // black
-                    } else {
-                        // Console.WriteLine($"Pixel color not black or white: {pixelColor}");
-                    }
-                }
-            }
-
-            var whiteRatio = whitePixelCount/totalPixelCount;
-            if(whiteRatio > 0.4) {
-                filteredCircles.Add(circle);
-            }
-
-            index++;
-        }
-
-        result.blackAndWhite = selectComp.Convert<Bgr, byte>();
-        result.color = img.Convert<Bgr, byte>();
-        foreach (var circle in filteredCircles) {
-            result.blackAndWhite.Draw(circle, new Bgr(0, 0, 255), 3);
-            result.color.Draw(circle, new Bgr(0, 0, 255), 3);
-        }
-
-        return result;
+    static Image<Bgr, Byte> DetectMissingHole(Image<Bgr, Byte> img) {
+        var filteredCircles =
+            new ProcessedImage<Bgr>(img)
+            .ConvertToGrayscale()
+            .SmoothGaussian(5)
+            .ThresholdBinary(new Gray(40), new Gray(255))
+            .Morphology(MorphOp.Close, ElementShape.Ellipse, new Size(8, 8))
+            .ThresholdBinaryInv(new Gray(128), new Gray(255))
+            .GetComponents()
+            .FilterComponentsBySize(200, 600)
+            .SmoothGaussian(5)
+            .FindCircles(new Gray(255), new Gray(50), 5, 1, 0, 20)
+            // NOTE: iterate over all the circles, iterate the pixels inside the circle,
+            //       get the percent of the circle filled with white pixels, if below a threshold discard the circle
+            .FindCirclesWithFillPercent(0.4);
+        return DrawCircles(img, filteredCircles);
     }
 
     static public Rectangle toRect(CircleF c) {
@@ -282,6 +193,14 @@ class Program {
 
         return process.ImageToColor();
     }
+
+    static public Image<Bgr, Byte> DrawCircles(Image<Bgr, Byte> img, List<CircleF> circles) {
+        foreach (var circle in circles) {
+            img.Draw(circle, new Bgr(0, 0, 255), 3);
+        }
+        return img;
+    }
+
 }
 
 class ProcessedImage<TColor>
@@ -299,12 +218,17 @@ where TColor : struct, IColor
     public Mat distanceMask = new();
     Mat distanceLabels = new();
 
+    // the result of HoughCircles
+    public CircleF[][] circles;
+    // the result of HoughLines
+    LineSegment2D[][] lines;
+
     public ProcessedImage(string filepath) {
         this.image = new Image<TColor, Byte>(filepath);
     }
 
     public ProcessedImage(Image<TColor, Byte> img) {
-        this.image = img;
+        this.image = img.Clone();
     }
 
     ProcessedImage(
@@ -325,12 +249,12 @@ where TColor : struct, IColor
         this.distanceLabels = distanceLabels;
     }
 
-    public Image<Bgr, Byte> ImageToColor() {
-        return this.image.Convert<Bgr, Byte>();
-    }
-
     public Image<Gray, Byte> ImageToGray() {
         return this.image.Convert<Gray, Byte>();
+    }
+
+    public Image<Bgr, Byte> ImageToColor() {
+        return this.image.Convert<Bgr, Byte>();
     }
 
     public ProcessedImage<TColor> SmoothGaussian(int kernelSize) {
@@ -407,7 +331,102 @@ where TColor : struct, IColor
         );
         return this;
     }
-}
 
+    public Image<TColor, Byte> GetImage() {
+        return this.image;
+    }
+
+    public ProcessedImage<Gray> ConvertToGrayscale() {
+        var gray = this.image.Convert<Gray, Byte>();
+        return new ProcessedImage<Gray>(
+            gray,
+            this.componentsLabels,
+            this.componentsStats,
+            this.componentsCentroids,
+            this.labelsCount,
+            this.distanceMask,
+            this.distanceLabels
+        );
+    }
+
+    public ProcessedImage<Bgr> ConvertToColor() {
+        var color = this.image.Convert<Bgr, Byte>();
+        return new ProcessedImage<Bgr>(
+            color,
+            this.componentsLabels,
+            this.componentsStats,
+            this.componentsCentroids,
+            this.labelsCount,
+            this.distanceMask,
+            this.distanceLabels
+        );
+    }
+
+    public ProcessedImage<TColor> ThresholdBinary(TColor threshold, TColor max) {
+        // dst(x,y) = max_value, if src(x,y) > threshold; 0, otherwise 
+        this.image = this.image.ThresholdBinary(threshold, max);
+        return this;
+    }
+
+    public ProcessedImage<TColor> ThresholdBinaryInv(TColor threshold, TColor max) {
+        // dst(x,y) = 0, if src(x,y) > threshold; max_value, otherwise
+        this.image = this.image.ThresholdBinaryInv(threshold, max);
+        return this;
+    }
+
+    public ProcessedImage<TColor> FindCircles(TColor cannyThreshold, TColor accThreshold, double accResolution, double minDist, int minRadius = 0, int maxRadius = 0) {
+        this.circles = this.image.HoughCircles(
+            cannyThreshold, // TColor cannyThreshold,
+            accThreshold,   // TColor accumulatorThreshold,
+            accResolution,  // double dp,
+            minDist,        // double minDist,
+            minRadius,      // int minRadius = 0
+            maxRadius       // int maxRadius = 0
+        );
+        return this;
+    }
+
+    public ProcessedImage<TColor> FindLines(double cannyThreshold, double cannyThresholdLinking, double rho, double theta, int threshold, double minLineWidth, double gapBetweenLines) {
+        this.lines = this.image.HoughLines(
+            cannyThreshold,        // double cannyThreshold,
+            cannyThresholdLinking, // double cannyThresholdLinking,
+            rho,                   // double rhoResolution,
+            theta,                 // double thetaResolution,
+            threshold,             // int threshold,
+            minLineWidth,          // double minLineWidth,
+            gapBetweenLines        // double gapBetweenLines
+        );
+        return this;
+    }
+
+    // fillPercent is 0.0-1.0
+    public List<CircleF> FindCirclesWithFillPercent(double fillPercent) {
+        var result = new List<CircleF>();
+        foreach(var circle in this.circles[0]) {
+            Rectangle rect = Program.toRect(circle);
+            var totalPixelCount = Math.PI * Math.Pow(circle.Radius, 2);
+            int whitePixelCount = 0;
+            for(int y = rect.Y; y < rect.Y + rect.Height; ++y) {
+                for(int x = rect.X; x < rect.X + rect.Width; ++x) {
+                    var p = new Point(x, y);
+                    if(!Program.isPointInCircle(p, circle)) continue;
+                    
+                    var pixelColor = this.image.Data[y, x, 0];
+                    if(pixelColor == 255) {
+                        // white
+                        whitePixelCount++;
+                    }
+                }
+            }
+
+            double whiteRatio = (double)whitePixelCount/(double)totalPixelCount;
+            if(whiteRatio > fillPercent) {
+                result.Add(circle);
+            }
+        }
+
+        return result;
+    }
+}
 // NOTE: the only holes not on the grayscale image are very big holes, make the max size bigger
 //       all the other failed detection cases are present just not found by the circle detection, tweek parameters
