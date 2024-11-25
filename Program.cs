@@ -152,77 +152,20 @@ class Program {
             .Morphology(MorphOp.Dilate, ElementShape.Rectangle, new Size(3, 3))
             .Morphology(MorphOp.Open, ElementShape.Rectangle, new Size(5, 5))
             .Morphology(MorphOp.Close, ElementShape.Ellipse, new Size(5, 5))
-            .SaveImage("closeImage.jpg")
+            // running copper lines highlited
             .GenerateDistanceMask(DistType.L1, 10)
-            ;
-
-        var distMask = process.GetDistanceMask();
-        CvInvoke.Imwrite("distancemask1.jpg", distMask);
-
-        // filter by distance
-        var distMaskCopy = distMask.Copy();
-        for(int row = 0; row < distMask.Rows; ++row) {
-            for(int col = 0; col < distMask.Cols; ++col) {
-                int value = 0;
-                for(int x = row - 1; x <= row + 1; ++x) {
-                    for(int y = col - 1; y <= col + 1; ++y) {
-                        if(x < 0 || x >= distMask.Rows) continue;
-                        if(y < 0 || y >= distMask.Cols) continue;
-                        value += distMask.Data[x, y, 0];
-                    }
-                }
-                
-                if(value > 25) {
-                    // white
-                    distMaskCopy.Data[row, col, 0] = 255;
-                }
-            }
-        }
-        CvInvoke.Imwrite("distancemask2.jpg", distMaskCopy);
-        var diff =
-            process
-            .Difference(distMaskCopy)
-            .SaveImage("distaceDiff1.jpg")
+            .FilterByDistance(15, 30) // max: 2295
+            // outlines of the wire
             .Morphology(MorphOp.Dilate, ElementShape.Ellipse, new Size(4, 4))
             .Morphology(MorphOp.Open, ElementShape.Ellipse, new Size(3, 3))
-            .SaveImage("distaceDiff2.jpg")
-            .GenerateDistanceMask(DistType.L1, 10);
-
-        var distMask2 = diff.GetDistanceMask();
-        CvInvoke.Imwrite("lastDistaceMask.jpg", distMask2);
-
-        // filter by distance2 - electric boogaloo
-        var distMask2Copy = distMask2.Copy();
-        for(int row = 0; row < distMask2.Rows; ++row) {
-            for(int col = 0; col < distMask2.Cols; ++col) {
-                int value = 0;
-                for(int x = row - 1; x <= row + 1; ++x) {
-                    for(int y = col - 1; y <= col + 1; ++y) {
-                        if(x < 0 || x >= distMask2.Rows) continue;
-                        if(y < 0 || y >= distMask2.Cols) continue;
-                        value += distMask2.Data[x, y, 0];
-                    }
-                }
-
-                if(value > 34) {
-                    // white
-                    distMask2Copy.Data[row, col, 0] = 255;
-                } else {
-                    // black
-                    distMask2Copy.Data[row, col, 0] = 0;
-                }
-            }
-        }
-        CvInvoke.Imwrite("lastDistaceMask2.jpg", distMask2Copy);
-
-        var newDistMask =
-            new ProcessedImage<Gray>(distMask2Copy)
+            .GenerateDistanceMask(DistType.L1, 10)
+            // TODO: use inv version
+            .FilterByDistance(34, 2295) // max: 2295
+            // only the larger white chunks remain
             .GetComponents()
             .HighlightComponents();
 
-        var finish = DrawCircles(img, newDistMask.circles[0].ToList<CircleF>());
-        CvInvoke.Imwrite("finish.jpg", finish);
-
+        var finish = DrawCircles(img, process.circles[0].ToList<CircleF>());
         return finish;
     }
 
@@ -247,7 +190,6 @@ where TColor : struct, IColor
     int labelsCount;
 
     // variables used for distance field
-    public Mat distanceMask = new();
     Mat distanceLabels = new();
 
     // the result of HoughCircles
@@ -269,7 +211,6 @@ where TColor : struct, IColor
         Mat componentsStats,
         Mat componentsCentroids,
         int labelsCount,
-        Mat distanceMask,
         Mat distanceLabels,
         CircleF[][] circles,
         LineSegment2D[][] lines
@@ -279,7 +220,6 @@ where TColor : struct, IColor
         this.componentsStats = componentsStats;
         this.componentsCentroids = componentsCentroids;
         this.labelsCount = labelsCount;
-        this.distanceMask = distanceMask;
         this.distanceLabels = distanceLabels;
         this.circles = circles;
         this.lines = lines;
@@ -306,7 +246,6 @@ where TColor : struct, IColor
             this.componentsStats,
             this.componentsCentroids,
             this.labelsCount,
-            this.distanceMask,
             this.distanceLabels,
             this.circles,
             this.lines
@@ -358,16 +297,27 @@ where TColor : struct, IColor
         return this;
     }
 
-    public ProcessedImage<TColor> GenerateDistanceMask(DistType type, int maskSize) {
+    public ProcessedImage<Gray> GenerateDistanceMask(DistType type, int maskSize) {
+        Mat distanceMask = new();
         CvInvoke.DistanceTransform(
             this.image,          // IInputArray src,
-            this.distanceMask,   // IOutputArray dst,
+            distanceMask,        // IOutputArray dst,
             this.distanceLabels, // IOutputArray labels,
             type,                // DistType distanceType,
             maskSize             // int maskSize,
             // DistLabelType labelType = DistLabelType.CComp
         );
-        return this;
+        var iMask = distanceMask.ToImage<Gray, Byte>();
+        return new ProcessedImage<Gray>(
+            iMask,
+            this.componentsLabels,
+            this.componentsStats,
+            this.componentsCentroids,
+            this.labelsCount,
+            this.distanceLabels,
+            this.circles,
+            this.lines
+        );
     }
 
     public Image<TColor, Byte> GetImage() {
@@ -382,7 +332,6 @@ where TColor : struct, IColor
             this.componentsStats,
             this.componentsCentroids,
             this.labelsCount,
-            this.distanceMask,
             this.distanceLabels,
             this.circles,
             this.lines
@@ -397,7 +346,6 @@ where TColor : struct, IColor
             this.componentsStats,
             this.componentsCentroids,
             this.labelsCount,
-            this.distanceMask,
             this.distanceLabels,
             this.circles,
             this.lines
@@ -480,31 +428,81 @@ where TColor : struct, IColor
             this.componentsStats,
             this.componentsCentroids,
             this.labelsCount,
-            this.distanceMask,
             this.distanceLabels,
             this.circles,
             this.lines
         );
     }
 
-    public Image<Gray, Byte> GetDistanceMask() {
-        return this.distanceMask.ToImage<Gray, Byte>();
-    }
-
     public ProcessedImage<TColor> HighlightComponents() {
         var iCentroids = this.componentsCentroids.ToImage<Gray, Int32>();
-
-        CircleF[][] circles = new CircleF[1][];
-        circles[0] = new CircleF[iCentroids.Rows];
+        this.circles[0] = new CircleF[iCentroids.Rows];
 
         for(int i = 0; i < iCentroids.Rows; ++i) {
             int x = iCentroids.Data[i, 0, 0];
             int y = iCentroids.Data[i, 1, 0];
             int radius = 15;
-            circles[0][i] = new CircleF(new PointF((float)x, (float)y), radius);
+            this.circles[0][i] = new CircleF(new PointF((float)x, (float)y), radius);
         }
-        this.circles = circles;
 
+        return this;
+    }
+
+    // if (min < pixel < max) pixel = white else pixel = black
+    public ProcessedImage<TColor> FilterByDistance(int min, int max) {
+        var result = this.image.Clone();
+        for(int row = 0; row < this.image.Rows; ++row) {
+            for(int col = 0; col < this.image.Cols; ++col) {
+                int value = 0;
+                // find distance value of a 3x3 area
+                for(int x = row - 1; x <= row + 1; ++x) {
+                    for(int y = col - 1; y <= col + 1; ++y) {
+                        if(x < 0 || x >= this.image.Rows) continue;
+                        if(y < 0 || y >= this.image.Cols) continue;
+                        value += this.image.Data[x, y, 0];
+                    }
+                }
+                
+                if(min < value && value < max) {
+                    // white
+                    result.Data[row, col, 0] = 255;
+                } else {
+                    // black
+                    result.Data[row, col, 0] = 0;
+                }
+            }
+        }
+
+        this.image = result;
+        return this;
+    }
+
+    // if (pixel < min || max < pixel) pixel = white else pixel = black
+    public ProcessedImage<TColor> FilterByDistanceInv(int min, int max) {
+        var result = this.image.Clone();
+        for(int row = 0; row < this.image.Rows; ++row) {
+            for(int col = 0; col < this.image.Cols; ++col) {
+                int value = 0;
+                // find distance value of a 3x3 area
+                for(int x = row - 1; x <= row + 1; ++x) {
+                    for(int y = col - 1; y <= col + 1; ++y) {
+                        if(x < 0 || x >= this.image.Rows) continue;
+                        if(y < 0 || y >= this.image.Cols) continue;
+                        value += this.image.Data[x, y, 0];
+                    }
+                }
+                
+                if(value < min || max < value) {
+                    // white
+                    result.Data[row, col, 0] = 255;
+                } else {
+                    // black
+                    result.Data[row, col, 0] = 0;
+                }
+            }
+        }
+
+        this.image = result;
         return this;
     }
 }
