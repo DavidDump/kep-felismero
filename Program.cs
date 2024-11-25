@@ -107,7 +107,7 @@ class Program {
     }
 
     static Image<Bgr, Byte> DetectMissingHole(Image<Bgr, Byte> img) {
-        var filteredCircles =
+        return
             new ProcessedImage<Bgr>(img)
             .ConvertToGrayscale()
             .SmoothGaussian(5)
@@ -120,8 +120,8 @@ class Program {
             .FindCircles(new Gray(255), new Gray(50), 5, 1, 0, 20)
             // NOTE: iterate over all the circles, iterate the pixels inside the circle,
             //       get the percent of the circle filled with white pixels, if below a threshold discard the circle
-            .FindCirclesWithFillPercent(0.4);
-        return DrawCircles(img, filteredCircles);
+            .FindCirclesWithFillPercent(0.4)
+            .DrawCircles(img);
     }
 
     static public Rectangle toRect(CircleF c) {
@@ -143,7 +143,7 @@ class Program {
     // TODO: instead of using morphology operations to get the lines, insted use the distance field
     //       only color the pixels white that are within a range, meaning they fall on the edge (is this the same this are finding contours?)
     static public Image<Bgr, Byte> DetectMouseBite(Image<Bgr, Byte> img) {
-        var process = 
+        return
             new ProcessedImage<Bgr>(img)
             .SmoothGaussian(5)
             .InRange(new Bgr(0, 80, 0), new Bgr(40, 100, 45))
@@ -152,7 +152,7 @@ class Program {
             .Morphology(MorphOp.Dilate, ElementShape.Rectangle, new Size(3, 3))
             .Morphology(MorphOp.Open, ElementShape.Rectangle, new Size(5, 5))
             .Morphology(MorphOp.Close, ElementShape.Ellipse, new Size(5, 5))
-            // running copper lines highlited
+            // running copper lines highlighted
             .GenerateDistanceMask(DistType.L1, 10)
             .FilterByDistance(15, 30) // max: 2295
             // outlines of the wire
@@ -163,19 +163,9 @@ class Program {
             .FilterByDistance(34, 2295) // max: 2295
             // only the larger white chunks remain
             .GetComponents()
-            .HighlightComponents();
-
-        var finish = DrawCircles(img, process.circles[0].ToList<CircleF>());
-        return finish;
+            .HighlightComponents()
+            .DrawCircles(img);
     }
-
-    static public Image<Bgr, Byte> DrawCircles(Image<Bgr, Byte> img, List<CircleF> circles) {
-        foreach (var circle in circles) {
-            img.Draw(circle, new Bgr(0, 0, 255), 3);
-        }
-        return img;
-    }
-
 }
 
 class ProcessedImage<TColor>
@@ -390,7 +380,7 @@ where TColor : struct, IColor
     }
 
     // fillPercent is 0.0-1.0
-    public List<CircleF> FindCirclesWithFillPercent(double fillPercent) {
+    public ProcessedImage<TColor> FindCirclesWithFillPercent(double fillPercent) {
         var result = new List<CircleF>();
         foreach(var circle in this.circles[0]) {
             Rectangle rect = Program.toRect(circle);
@@ -415,7 +405,8 @@ where TColor : struct, IColor
             }
         }
 
-        return result;
+        this.circles[0] = result.ToArray();
+        return this;
     }
 
     public ProcessedImage<TColor> Difference(Image<TColor, Byte> img) {
@@ -504,6 +495,13 @@ where TColor : struct, IColor
 
         this.image = result;
         return this;
+    }
+
+    public Image<Bgr, Byte> DrawCircles(Image<Bgr, Byte> img) {
+        foreach (var circle in this.circles[0]) {
+            img.Draw(circle, new Bgr(0, 0, 255), 3);
+        }
+        return img;
     }
 }
 // NOTE: the only holes not on the grayscale image are very big holes, make the max size bigger
