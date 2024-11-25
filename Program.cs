@@ -1,6 +1,7 @@
 using System;
 using System.Xml;
 using System.Drawing;
+using System.Diagnostics;
 using Emgu.CV;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Features2D;
@@ -81,6 +82,7 @@ class Program {
         bool missingHole = false;
         bool mouseBite = true;
         for(int i = 1; i <= 1; ++i) {
+            Console.Write($"Scanning image {i}...");
             if(missingHole) {
                 string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
                 var img = new Image<Bgr, Byte>(inPath);
@@ -100,6 +102,7 @@ class Program {
                 string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
                 CvInvoke.Imwrite(outPath, res);
             }
+            Console.WriteLine($"Done");
         }
     }
 
@@ -137,6 +140,8 @@ class Program {
         return true;
     }
 
+    // TODO: instead of using morphology operations to get the lines, insted use the distance field
+    //       only color the pixels white that are within a range, meaning they fall on the edge (is this the same this are finding contours?)
     static public Image<Bgr, Byte> DetectMouseBite(Image<Bgr, Byte> img) {
         var process = 
             new ProcessedImage<Bgr>(img)
@@ -151,47 +156,74 @@ class Program {
             .GenerateDistanceMask(DistType.L1, 10)
             ;
 
-        CvInvoke.Imwrite("distMask.jpg", process.distanceMask);
-        
-        // var iMask = distanceMask.ToImage<Gray, Byte>();
+        var distMask = process.GetDistanceMask();
+        CvInvoke.Imwrite("distancemask1.jpg", distMask);
 
-        // var foo = iMask.Clone();
-        // CvInvoke.AbsDiff(closeImage, iMask, foo);
-        // CvInvoke.Imwrite("distMask.jpg", foo);
+        // filter by distance
+        var distMaskCopy = distMask.Copy();
+        for(int row = 0; row < distMask.Rows; ++row) {
+            for(int col = 0; col < distMask.Cols; ++col) {
+                int value = 0;
+                for(int x = row - 1; x <= row + 1; ++x) {
+                    for(int y = col - 1; y <= col + 1; ++y) {
+                        if(x < 0 || x >= distMask.Rows) continue;
+                        if(y < 0 || y >= distMask.Cols) continue;
+                        value += distMask.Data[x, y, 0];
+                    }
+                }
+                
+                if(value > 25) {
+                    // white
+                    distMaskCopy.Data[row, col, 0] = 255;
+                }
+            }
+        }
+        CvInvoke.Imwrite("distancemask2.jpg", distMaskCopy);
+        var diff =
+            process
+            .Difference(distMaskCopy)
+            .SaveImage("distaceDiff1.jpg")
+            .Morphology(MorphOp.Dilate, ElementShape.Ellipse, new Size(4, 4))
+            .Morphology(MorphOp.Open, ElementShape.Ellipse, new Size(3, 3))
+            .SaveImage("distaceDiff2.jpg")
+            .GenerateDistanceMask(DistType.L1, 10);
 
-        // NOTE: sobel(0, 1, 3) highlights edges along the y axis
-        //       sobel(1, 0, 3) highlights edges along the x axis
-        //       the third parameter is "intensity"
-        // var sobel = closeImage.Sobel(0, 2, 9);
-        // CvInvoke.Imwrite("sobel.jpg", sobel);
+        var distMask2 = diff.GetDistanceMask();
+        CvInvoke.Imwrite("lastDistaceMask.jpg", distMask2);
 
-        // Mat edges = new Mat();
-        // CvInvoke.Canny(grayImage, edges, 100, 200);
+        // filter by distance2 - electric boogaloo
+        var distMask2Copy = distMask2.Copy();
+        for(int row = 0; row < distMask2.Rows; ++row) {
+            for(int col = 0; col < distMask2.Cols; ++col) {
+                int value = 0;
+                for(int x = row - 1; x <= row + 1; ++x) {
+                    for(int y = col - 1; y <= col + 1; ++y) {
+                        if(x < 0 || x >= distMask2.Rows) continue;
+                        if(y < 0 || y >= distMask2.Cols) continue;
+                        value += distMask2.Data[x, y, 0];
+                    }
+                }
 
-        // VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
-        // Mat hierarchy = new Mat();
-        // CvInvoke.FindContours(edges, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
-        // foreach(var contour) {
+                if(value > 34) {
+                    // white
+                    distMask2Copy.Data[row, col, 0] = 255;
+                } else {
+                    // black
+                    distMask2Copy.Data[row, col, 0] = 0;
+                }
+            }
+        }
+        CvInvoke.Imwrite("lastDistaceMask2.jpg", distMask2Copy);
 
-        // }
+        var newDistMask =
+            new ProcessedImage<Gray>(distMask2Copy)
+            .GetComponents()
+            .HighlightComponents();
 
-        // imgMask = imgMask.SmoothGaussian(5);
-        // LineSegment2D[][] lines = imgMask.HoughLines(
-        //     255,           // double cannyThreshold,
-        //     255,           // double cannyThresholdLinking,
-        //     1,             // double rhoResolution,
-        //     Math.PI / 180, // double thetaResolution,
-        //     100,           // int threshold,
-        //     50,             // double minLineWidth,
-        //     0              // double gapBetweenLines
-        // );
+        var finish = DrawCircles(img, newDistMask.circles[0].ToList<CircleF>());
+        CvInvoke.Imwrite("finish.jpg", finish);
 
-        // foreach(var line in lines[0]) {
-        //     result.Draw(line, new Bgr(0, 0, 255), 3);
-        // }
-        // CvInvoke.Imwrite("lines.jpg", result);
-
-        return process.ImageToColor();
+        return finish;
     }
 
     static public Image<Bgr, Byte> DrawCircles(Image<Bgr, Byte> img, List<CircleF> circles) {
@@ -426,6 +458,42 @@ where TColor : struct, IColor
         }
 
         return result;
+    }
+
+    public ProcessedImage<TColor> Difference(Image<TColor, Byte> img) {
+        Mat diff = new();
+        CvInvoke.AbsDiff(this.image, img, diff);
+        var iDiff = diff.ToImage<TColor, Byte>();
+        return new ProcessedImage<TColor>(
+            iDiff,
+            this.componentsLabels,
+            this.componentsStats,
+            this.componentsCentroids,
+            this.labelsCount,
+            this.distanceMask,
+            this.distanceLabels
+        );
+    }
+
+    public Image<Gray, Byte> GetDistanceMask() {
+        return this.distanceMask.ToImage<Gray, Byte>();
+    }
+
+    public ProcessedImage<TColor> HighlightComponents() {
+        var iCentroids = this.componentsCentroids.ToImage<Gray, Int32>();
+
+        CircleF[][] circles = new CircleF[1][];
+        circles[0] = new CircleF[iCentroids.Rows];
+
+        for(int i = 0; i < iCentroids.Rows; ++i) {
+            int x = iCentroids.Data[i, 0, 0];
+            int y = iCentroids.Data[i, 1, 0];
+            int radius = 15;
+            circles[0][i] = new CircleF(new PointF((float)x, (float)y), radius);
+        }
+        this.circles = circles;
+
+        return this;
     }
 }
 // NOTE: the only holes not on the grayscale image are very big holes, make the max size bigger
