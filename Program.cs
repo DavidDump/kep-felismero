@@ -251,9 +251,9 @@ where TColor : struct, IColor
     Mat distanceLabels = new();
 
     // the result of HoughCircles
-    public CircleF[][] circles;
+    public CircleF[][] circles = new CircleF[1][];
     // the result of HoughLines
-    LineSegment2D[][] lines;
+    LineSegment2D[][] lines = new LineSegment2D[1][];
 
     public ProcessedImage(string filepath) {
         this.image = new Image<TColor, Byte>(filepath);
@@ -270,7 +270,9 @@ where TColor : struct, IColor
         Mat componentsCentroids,
         int labelsCount,
         Mat distanceMask,
-        Mat distanceLabels
+        Mat distanceLabels,
+        CircleF[][] circles,
+        LineSegment2D[][] lines
     ) {
         this.image = image;
         this.componentsLabels = componentsLabels;
@@ -279,6 +281,8 @@ where TColor : struct, IColor
         this.labelsCount = labelsCount;
         this.distanceMask = distanceMask;
         this.distanceLabels = distanceLabels;
+        this.circles = circles;
+        this.lines = lines;
     }
 
     public Image<Gray, Byte> ImageToGray() {
@@ -303,7 +307,9 @@ where TColor : struct, IColor
             this.componentsCentroids,
             this.labelsCount,
             this.distanceMask,
-            this.distanceLabels
+            this.distanceLabels,
+            this.circles,
+            this.lines
         );
     }
 
@@ -377,7 +383,9 @@ where TColor : struct, IColor
             this.componentsCentroids,
             this.labelsCount,
             this.distanceMask,
-            this.distanceLabels
+            this.distanceLabels,
+            this.circles,
+            this.lines
         );
     }
 
@@ -390,7 +398,9 @@ where TColor : struct, IColor
             this.componentsCentroids,
             this.labelsCount,
             this.distanceMask,
-            this.distanceLabels
+            this.distanceLabels,
+            this.circles,
+            this.lines
         );
     }
 
@@ -471,7 +481,9 @@ where TColor : struct, IColor
             this.componentsCentroids,
             this.labelsCount,
             this.distanceMask,
-            this.distanceLabels
+            this.distanceLabels,
+            this.circles,
+            this.lines
         );
     }
 
