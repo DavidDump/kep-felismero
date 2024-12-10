@@ -79,11 +79,12 @@ class Program {
         if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
         Directory.CreateDirectory(outDir);
         
-        bool missingHole = false;
+        bool missingHole = true;
         bool mouseBite = true;
-        for(int i = 1; i <= 1; ++i) {
-            Console.Write($"Scanning image {i}...");
+        for(int i = 1; i <= 20; ++i) {
+            Console.WriteLine($"Scanning image {i}:");
             if(missingHole) {
+                Console.WriteLine($"  Finding missing holes");
                 string inPath = MissingHole_getInPathNoExt(missingHoleDir, i) + ".jpg";
                 var img = new Image<Bgr, Byte>(inPath);
 
@@ -94,6 +95,7 @@ class Program {
             }
 
             if(mouseBite) {
+                Console.WriteLine($"  Finding mouse bites");
                 string inPath = MouseBite_getInPathNoExt(mouseBiteDir, i) + ".jpg";
                 var img = new Image<Bgr, Byte>(inPath);
 
@@ -102,7 +104,6 @@ class Program {
                 string outPath = MouseBite_getOutPathNoExt(outDir, i) + ".jpg";
                 CvInvoke.Imwrite(outPath, res);
             }
-            Console.WriteLine($"Done");
         }
     }
 
